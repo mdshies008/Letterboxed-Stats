@@ -29,6 +29,20 @@ function formatWatchTime(minutes: number): string {
   return `${remainingMinutes}m`;
 }
 
+function formatDuration(seconds: number): string {
+  const totalSeconds = Math.max(0, Math.floor(seconds));
+  const minutes = Math.floor(totalSeconds / 60);
+  const remainingSeconds = totalSeconds % 60;
+
+  if (minutes >= 60) {
+    return `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
+  }
+  if (minutes > 0) {
+    return `${minutes}m ${remainingSeconds}s`;
+  }
+  return `${remainingSeconds}s`;
+}
+
 function App() {
   const [films, setFilms] = useState<Film[]>([]);
   const [status, setStatus] = useState(
@@ -45,6 +59,12 @@ function App() {
   const [enrichProgress, setEnrichProgress] = useState('');
   const [enrichMessage, setEnrichMessage] = useState('');
   const [enrichError, setEnrichError] = useState<string | null>(null);
+  const [enrichStats, setEnrichStats] = useState({
+    completed: 0,
+    total: 0,
+    etaSeconds: null as number | null,
+  });
+  const [enrichElapsedSeconds, setEnrichElapsedSeconds] = useState(0);
 
   const [manualSearchResults, setManualSearchResults] = useState<
     Record<string, TmdbSearchResult[]>
@@ -77,6 +97,16 @@ function App() {
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    if (!enrichBusy) return;
+
+    const timer = window.setInterval(() => {
+      setEnrichElapsedSeconds((seconds) => seconds + 1);
+    }, 1000);
+
+    return () => window.clearInterval(timer);
+  }, [enrichBusy]);
 
   async function handleImport(event: ChangeEvent<HTMLInputElement>) {
     const input = event.currentTarget;
@@ -140,6 +170,7 @@ function App() {
     );
 
     if (candidates.length === 0) {
+      setEnrichStats({ completed: 0, total: 0, etaSeconds: null });
       setEnrichMessage(
         'All watched and rated films already have TMDB metadata.',
       );
@@ -150,17 +181,25 @@ function App() {
     setEnrichBusy(true);
     setEnrichError(null);
     setEnrichMessage('');
+    setEnrichElapsedSeconds(0);
+    setEnrichStats({
+      completed: 0,
+      total: candidates.length,
+      etaSeconds: null,
+    });
 
+    const startedAt = Date.now();
     const updatedFilms = [...sourceFilms];
     let matchedCount = 0;
     let unmatchedCount = 0;
+    let completedCount = 0;
 
     try {
       for (let index = 0; index < candidates.length; index += 1) {
         const film = candidates[index];
 
         setEnrichProgress(
-          `Looking up ${index + 1} of ${candidates.length}: ${film.title}`,
+          `Checking film ${index + 1} of ${candidates.length}: ${film.title}`,
         );
 
         const metadata = await findFilmMetadata(film);
@@ -181,8 +220,23 @@ function App() {
           unmatchedCount += 1;
         }
 
-        const isCheckpoint = (index + 1) % 10 === 0;
-        const isLastFilm = index === candidates.length - 1;
+        completedCount += 1;
+
+        const elapsedSeconds = (Date.now() - startedAt) / 1000;
+        const averageSecondsPerFilm = elapsedSeconds / completedCount;
+        const remainingFilms = candidates.length - completedCount;
+        const etaSeconds = Math.ceil(
+          averageSecondsPerFilm * remainingFilms,
+        );
+
+        setEnrichStats({
+          completed: completedCount,
+          total: candidates.length,
+          etaSeconds,
+        });
+
+        const isCheckpoint = completedCount % 10 === 0;
+        const isLastFilm = completedCount === candidates.length;
 
         if (isCheckpoint || isLastFilm) {
           const snapshot = [...updatedFilms];
@@ -376,7 +430,49 @@ function App() {
 
                 <h3>Movie details</h3>
                 <p>TMDB details are enriched automatically after import.</p>
-                {enrichProgress && <p role="status">{enrichProgress}</p>}
+
+                {enrichBusy && enrichStats.total > 0 && (
+                  <div className="enrichment-progress" role="status">
+                    <div className="enrichment-progress-heading">
+                      <strong>Enriching movie details</strong>
+                      <span>
+                        {Math.round(
+                          (enrichStats.completed / enrichStats.total) * 100,
+                        )}
+                        %
+                      </span>
+                    </div>
+
+                    <progress
+                      className="enrichment-progress-bar"
+                      value={enrichStats.completed}
+                      max={enrichStats.total}
+                      aria-label="TMDB enrichment progress"
+                    />
+
+                    <div className="enrichment-progress-info">
+                      <span>
+                        {enrichStats.completed} of {enrichStats.total} films
+                        checked ·{' '}
+                        {enrichStats.total - enrichStats.completed} remaining
+                      </span>
+                      <span>
+                        Elapsed {formatDuration(enrichElapsedSeconds)}
+                      </span>
+                    </div>
+
+                    <p className="enrichment-current-film">
+                      {enrichProgress}
+                    </p>
+
+                    <p className="enrichment-eta">
+                      {enrichStats.etaSeconds === null
+                        ? 'Estimating time remaining…'
+                        : `About ${formatDuration(enrichStats.etaSeconds)} remaining`}
+                    </p>
+                  </div>
+                )}
+
                 {enrichMessage && <p role="status">{enrichMessage}</p>}
                 {enrichError && <p role="alert">{enrichError}</p>}
 

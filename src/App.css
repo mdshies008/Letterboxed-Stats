@@ -2,9 +2,9 @@ main {
   display: flex;
   flex-direction: column;
   width: 100%;
-  max-width: 1126px;
+  max-width: none;
   min-height: 100svh;
-  margin: 0 auto;
+  margin: 0;
   color: var(--text);
 }
 
@@ -587,4 +587,43 @@ input:focus-visible {
   color: var(--text);
   font-size: 0.85rem;
   font-weight: 400;
+}
+
+.enrichment-progress {
+  width: min(100%, 640px);
+  display: grid;
+  gap: 0.55rem;
+  padding: 1rem;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface, rgba(0, 0, 0, 0.18));
+}
+
+.enrichment-progress-heading,
+.enrichment-progress-info {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.enrichment-progress-heading {
+  color: var(--text-h);
+}
+
+.enrichment-progress-info,
+.enrichment-current-film,
+.enrichment-eta {
+  margin: 0;
+  color: var(--text);
+  font-size: 0.9rem;
+}
+
+.enrichment-progress-bar {
+  width: 100%;
+  height: 20px;
+  accent-color: var(--accent);
+}
+
+.enrichment-eta {
+  opacity: 0.8;
 }

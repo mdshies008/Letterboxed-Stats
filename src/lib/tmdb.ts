@@ -12,6 +12,8 @@ export interface TmdbSearchResult {
   poster_path?: string | null;
   original_language?: string;
   vote_average?: number;
+  vote_count?: number;
+  popularity?: number;
 }
 
 interface TmdbSearchResponse {
