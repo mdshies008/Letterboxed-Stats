@@ -19,6 +19,8 @@ import {
 } from './lib/tmdb';
 import './App.css';
 
+type FilmSort = 'title' | 'rating-high' | 'rating-low' | 'year-new' | 'year-old';
+
 function formatWatchTime(minutes: number): string {
   const days = Math.floor(minutes / 1440);
   const hours = Math.floor((minutes % 1440) / 60);
@@ -50,9 +52,9 @@ function App() {
   );
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'review'>(
-    'dashboard',
-  );
+  const [activeTab, setActiveTab] = useState<
+    'dashboard' | 'review' | 'films'
+  >('dashboard');
   const [period, setPeriod] = useState('all-time');
 
   const [enrichBusy, setEnrichBusy] = useState(false);
@@ -72,6 +74,13 @@ function App() {
   const [manualBusyKey, setManualBusyKey] = useState<string | null>(null);
   const [manualMessage, setManualMessage] = useState('');
   const [manualError, setManualError] = useState<string | null>(null);
+
+  const [filmSearch, setFilmSearch] = useState('');
+  const [genreFilter, setGenreFilter] = useState('all');
+  const [directorFilter, setDirectorFilter] = useState('all');
+  const [countryFilter, setCountryFilter] = useState('all');
+  const [scoreFilter, setScoreFilter] = useState('all');
+  const [filmSort, setFilmSort] = useState<FilmSort>('title');
 
   useEffect(() => {
     let cancelled = false;
@@ -331,7 +340,6 @@ function App() {
   const years = getAvailableYears(films);
   const watchedFilms = films.filter((film) => film.watched);
   const ratedFilms = films.filter((film) => film.rating !== null);
-  const watchlistCount = films.filter((film) => film.watchlisted).length;
 
   const averageRating = ratedFilms.length
     ? ratedFilms.reduce((total, film) => total + (film.rating ?? 0), 0) /
@@ -382,53 +390,203 @@ function App() {
       (film.watched || film.rating !== null) && !film.metadata?.tmdbId,
   );
 
+  const filmCollection = films.filter(
+    (film) => film.watched || film.rating !== null,
+  );
+
+  const filmGenres = [
+    ...new Set(filmCollection.flatMap((film) => film.metadata?.genres ?? [])),
+  ].sort((a, b) => a.localeCompare(b));
+
+  const filmDirectors = [
+    ...new Set(
+      filmCollection.flatMap((film) => film.metadata?.directors ?? []),
+    ),
+  ].sort((a, b) => a.localeCompare(b));
+
+  const filmCountries = [
+    ...new Set(
+      filmCollection.flatMap((film) => film.metadata?.countries ?? []),
+    ),
+  ].sort((a, b) => a.localeCompare(b));
+
+  const filmScores = [
+    ...new Set(
+      filmCollection
+        .map((film) => film.rating)
+        .filter((rating): rating is number => rating !== null),
+    ),
+  ].sort((a, b) => b - a);
+
+  const searchTerm = filmSearch.trim().toLocaleLowerCase();
+
+  const visibleFilms = filmCollection
+    .filter((film) => {
+      const metadata = film.metadata;
+      const searchableText = [
+        film.title,
+        film.year?.toString() ?? '',
+        ...(metadata?.genres ?? []),
+        ...(metadata?.directors ?? []),
+        ...(metadata?.countries ?? []),
+      ]
+        .join(' ')
+        .toLocaleLowerCase();
+
+      return (
+        (searchTerm === '' || searchableText.includes(searchTerm)) &&
+        (genreFilter === 'all' ||
+          (metadata?.genres ?? []).includes(genreFilter)) &&
+        (directorFilter === 'all' ||
+          (metadata?.directors ?? []).includes(directorFilter)) &&
+        (countryFilter === 'all' ||
+          (metadata?.countries ?? []).includes(countryFilter)) &&
+        (scoreFilter === 'all' ||
+          (scoreFilter === 'unrated'
+            ? film.rating === null
+            : film.rating === Number(scoreFilter)))
+      );
+    })
+    .sort((a, b) => {
+      switch (filmSort) {
+        case 'rating-high':
+          return (b.rating ?? -1) - (a.rating ?? -1);
+        case 'rating-low':
+          return (a.rating ?? Infinity) - (b.rating ?? Infinity);
+        case 'year-new':
+          return (b.year ?? -Infinity) - (a.year ?? -Infinity);
+        case 'year-old':
+          return (a.year ?? Infinity) - (b.year ?? Infinity);
+        default:
+          return a.title.localeCompare(b.title);
+      }
+    });
+
   return (
-    <main>
+    <main className="app-shell">
       <header className="app-header">
-        <p>MY MOVIE ARCHIVE</p>
-        <h1>Your films, in perspective.</h1>
-        <p>Add your Letterboxd data to explore your film history.</p>
+        <p className="app-breadcrumb">
+          YOUR MOVIE ARCHIVE <span>/</span>{' '}
+          {activeTab === 'films'
+            ? 'YOUR FILM ARCHIVE'
+            : activeTab === 'review'
+              ? 'YOUR YEAR IN REVIEW'
+              : 'YOUR OVERVIEW'}
+        </p>
+
+        <div className="header-actions">
+          <label htmlFor="header-period">Viewing period</label>
+          <select
+            id="header-period"
+            value={period}
+            onChange={(event) => setPeriod(event.target.value)}
+          >
+            <option value="all-time">All time</option>
+            {years.map((year) => (
+              <option key={year} value={year}>
+                {year}
+              </option>
+            ))}
+          </select>
+
+          <span className="header-library-count">
+            {filmCollection.length} FILMS
+          </span>
+
+          <label
+            className={`header-import ${
+              busy || enrichBusy || manualBusyKey !== null ? 'disabled' : ''
+            }`}
+            htmlFor="account-export-file"
+          >
+            ☁ Import data
+          </label>
+          <input
+            className="visually-hidden"
+            id="account-export-file"
+            type="file"
+            accept=".zip,application/zip"
+            onChange={handleImport}
+            disabled={busy || enrichBusy || manualBusyKey !== null}
+          />
+        </div>
       </header>
 
       <div className="app-layout">
         <nav className="app-tabs" aria-label="Main sections">
+          <div className="sidebar-brand">
+            <span className="sidebar-brand-icon" aria-hidden="true">
+              ▣
+            </span>
+            <span>
+              <strong>My Movie Archive</strong>
+              <small>Your cinematic history</small>
+            </span>
+          </div>
+
+          <p className="sidebar-section-label">YOUR WORLD</p>
+
           <button
             type="button"
             className={activeTab === 'dashboard' ? 'app-tab active' : 'app-tab'}
             aria-pressed={activeTab === 'dashboard'}
             onClick={() => setActiveTab('dashboard')}
           >
-            Dashboard
+            <span aria-hidden="true">▦</span>
+            Overview
           </button>
+
+          <button
+            type="button"
+            className={activeTab === 'films' ? 'app-tab active' : 'app-tab'}
+            aria-pressed={activeTab === 'films'}
+            onClick={() => setActiveTab('films')}
+          >
+            <span aria-hidden="true">▣</span>
+            Film library
+          </button>
+
           <button
             type="button"
             className={activeTab === 'review' ? 'app-tab active' : 'app-tab'}
             aria-pressed={activeTab === 'review'}
             onClick={() => setActiveTab('review')}
           >
+            <span aria-hidden="true">✦</span>
             Year in Review
           </button>
+
+          <section className="sidebar-promo">
+            <span aria-hidden="true">✳</span>
+            <h2>It’s all about your stories.</h2>
+            <p>One Letterboxd export. Your film history in one place.</p>
+            <button type="button" onClick={() => setActiveTab('dashboard')}>
+              Analyze my films <span aria-hidden="true">→</span>
+            </button>
+          </section>
+
+          <div className="sidebar-footer">
+            <strong>MADE FOR FILM LOVERS ♡</strong>
+            <span>Not affiliated with Letterboxd or TMDB.</span>
+          </div>
         </nav>
 
         <div className="app-page-content">
           {activeTab === 'dashboard' && (
             <div className="dashboard-panel">
               <section className="dashboard-upload">
-                <h2>Your library</h2>
-                <label htmlFor="account-export-file">
-                  Add your Letterboxd data
-                </label>
-                <input
-                  id="account-export-file"
-                  type="file"
-                  accept=".zip,application/zip"
-                  onChange={handleImport}
-                  disabled={busy || enrichBusy || manualBusyKey !== null}
-                />
+                <div className="section-heading">
+                  <div>
+                    <p className="wrapped-eyebrow">YOUR LIBRARY</p>
+                    <h1>Your films, in perspective.</h1>
+                    <p>Add your Letterboxd data to explore your film history.</p>
+                  </div>
+                </div>
+
                 <p role="status">{status}</p>
                 {error && <p role="alert">{error}</p>}
 
-                <h3>Movie details</h3>
+                <h2>Movie details</h2>
                 <p>TMDB details are enriched automatically after import.</p>
 
                 {enrichBusy && enrichStats.total > 0 && (
@@ -593,9 +751,13 @@ function App() {
 
               {films.length > 0 && (
                 <section className="dashboard-overview">
-                  <div>
-                    <p className="wrapped-eyebrow">YOUR LIBRARY AT A GLANCE</p>
-                    <h2>General overview</h2>
+                  <div className="section-heading">
+                    <div>
+                      <p className="wrapped-eyebrow">
+                        YOUR LIBRARY AT A GLANCE
+                      </p>
+                      <h2>General overview</h2>
+                    </div>
                   </div>
 
                   <div className="dashboard-stats">
@@ -624,8 +786,8 @@ function App() {
                       </small>
                     </article>
                     <article className="dashboard-stat">
-                      <span>Watchlist</span>
-                      <strong>{watchlistCount}</strong>
+                      <span>Films rated</span>
+                      <strong>{ratedFilms.length}</strong>
                     </article>
                   </div>
 
@@ -705,6 +867,141 @@ function App() {
             </div>
           )}
 
+          {activeTab === 'films' && (
+            <section className="films-page">
+              <div className="films-heading">
+                <div>
+                  <p className="wrapped-eyebrow">02 / THE ARCHIVE</p>
+                  <h1>Every frame you collected</h1>
+                  <p>Search, sort, and rediscover the films that make up your story.</p>
+                </div>
+                <span className="films-count">
+                  {filmCollection.length} FILMS
+                </span>
+              </div>
+
+              <div className="films-filters">
+                <input
+                  type="search"
+                  value={filmSearch}
+                  onChange={(event) => setFilmSearch(event.target.value)}
+                  placeholder="⌕  Find a film..."
+                  aria-label="Search films"
+                />
+
+                <select
+                  value={genreFilter}
+                  onChange={(event) => setGenreFilter(event.target.value)}
+                  aria-label="Filter by genre"
+                >
+                  <option value="all">All genres</option>
+                  {filmGenres.map((genre) => (
+                    <option key={genre} value={genre}>
+                      {genre}
+                    </option>
+                  ))}
+                </select>
+
+                <select
+                  value={directorFilter}
+                  onChange={(event) => setDirectorFilter(event.target.value)}
+                  aria-label="Filter by director"
+                >
+                  <option value="all">All directors</option>
+                  {filmDirectors.map((director) => (
+                    <option key={director} value={director}>
+                      {director}
+                    </option>
+                  ))}
+                </select>
+
+                <select
+                  value={countryFilter}
+                  onChange={(event) => setCountryFilter(event.target.value)}
+                  aria-label="Filter by country"
+                >
+                  <option value="all">All countries</option>
+                  {filmCountries.map((country) => (
+                    <option key={country} value={country}>
+                      {country}
+                    </option>
+                  ))}
+                </select>
+
+                <select
+                  value={scoreFilter}
+                  onChange={(event) => setScoreFilter(event.target.value)}
+                  aria-label="Filter by Letterboxd rating"
+                >
+                  <option value="all">All ratings</option>
+                  <option value="unrated">Unrated</option>
+                  {filmScores.map((score) => (
+                    <option key={score} value={score}>
+                      {score.toFixed(1)} / 5
+                    </option>
+                  ))}
+                </select>
+
+                <select
+                  value={filmSort}
+                  onChange={(event) =>
+                    setFilmSort(event.target.value as FilmSort)
+                  }
+                  aria-label="Sort films"
+                >
+                  <option value="title">Title: A–Z</option>
+                  <option value="rating-high">Highest rated</option>
+                  <option value="rating-low">Lowest rated</option>
+                  <option value="year-new">Newest first</option>
+                  <option value="year-old">Oldest first</option>
+                </select>
+              </div>
+
+              {visibleFilms.length > 0 ? (
+                <div className="films-list">
+                  {visibleFilms.map((film) => (
+                    <article className="film-card" key={film.key}>
+                      <div className="film-card-poster">
+                        {film.metadata?.posterPath ? (
+                          <img
+                            src={`https://image.tmdb.org/t/p/w500${film.metadata.posterPath}`}
+                            alt={`Poster for ${film.title}`}
+                            loading="lazy"
+                          />
+                        ) : (
+                          <div className="film-poster-empty">
+                            {film.metadata?.tmdbId
+                              ? 'No poster available'
+                              : 'TMDB match needed'}
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="film-card-info">
+                        <h3 title={film.title}>{film.title}</h3>
+                        <div className="film-card-details">
+                          <span>{film.year ?? 'Year unknown'}</span>
+                          {film.rating !== null && (
+                            <strong>★ {film.rating.toFixed(1)}</strong>
+                          )}
+                        </div>
+                        {!film.metadata?.tmdbId && (
+                          <span className="film-card-unmatched">
+                            TMDB data needs review
+                          </span>
+                        )}
+                      </div>
+                    </article>
+                  ))}
+                </div>
+              ) : (
+                <p className="films-empty">
+                  No films match those search and filter options.
+                </p>
+              )}
+            </section>
+          )}
+
           {activeTab === 'review' && (
             <div className="review-panel">
               {films.length > 0 ? (
@@ -712,14 +1009,14 @@ function App() {
                   <div className="wrapped-header">
                     <div>
                       <p className="wrapped-eyebrow">YOUR FILMS, IN REVIEW</p>
-                      <h2>Year in Review</h2>
+                      <h1>Year in Review</h1>
                       <p>Your viewing highlights for the selected period.</p>
                     </div>
 
                     <div className="wrapped-controls">
-                      <label htmlFor="viewing-period">Viewing period</label>
+                      <label htmlFor="review-period">Viewing period</label>
                       <select
-                        id="viewing-period"
+                        id="review-period"
                         value={period}
                         onChange={(event) => setPeriod(event.target.value)}
                       >
@@ -746,7 +1043,7 @@ function App() {
 
                   <div className="wrapped-grid">
                     <article className="wrapped-card wrapped-card-films">
-                      <h3>Most-watched films</h3>
+                      <h2>Most-watched films</h2>
                       {topWatchedFilms.length > 0 ? (
                         <ol className="wrapped-top-films">
                           {topWatchedFilms.map(({ film, watchCount }) => (
@@ -788,7 +1085,7 @@ function App() {
                     </article>
 
                     <article className="wrapped-card">
-                      <h3>Highest-rated director</h3>
+                      <h2>Highest-rated director</h2>
                       {topRatedDirector ? (
                         <p className="wrapped-highlight">
                           <strong>{topRatedDirector.name}</strong>
@@ -806,7 +1103,7 @@ function App() {
                     </article>
 
                     <article className="wrapped-card">
-                      <h3>Most-watched countries</h3>
+                      <h2>Most-watched countries</h2>
                       {topWatchedCountries.length > 0 ? (
                         <ol className="wrapped-country-list">
                           {topWatchedCountries.map((country) => (
@@ -830,12 +1127,12 @@ function App() {
               ) : (
                 <section className="review-empty">
                   <h2>Your Year in Review will appear here</h2>
-                  <p>Add your Letterboxd data from the Dashboard.</p>
+                  <p>Add your Letterboxd data from Overview.</p>
                   <button
                     type="button"
                     onClick={() => setActiveTab('dashboard')}
                   >
-                    Go to Dashboard
+                    Go to Overview
                   </button>
                 </section>
               )}
