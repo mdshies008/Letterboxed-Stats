@@ -63,19 +63,6 @@ npm run preview
 
 The production build is written to `dist/`.
 
-## Deployment
-
-The repository includes a GitHub Actions workflow at `.github/workflows/static.yml` that builds and deploys the site to GitHub Pages when changes are pushed to `main` (and can also be run manually from Actions).
-
-The Vite base path is configured as `/Film-Wrapped/` in `vite.config.ts`. If you deploy from a fork or rename the repository, update that base path to match the GitHub Pages project URL, then enable **Settings → Pages → GitHub Actions** in the repository.
-
-## Data and privacy
-
-- Your ZIP is read in your browser; the app does not upload your Letterboxd export or save it to an application account.
-- The imported library and enriched metadata are stored locally in IndexedDB on the current browser and device. They are not automatically synced to another device.
-- To find matching metadata, movie titles and release years are sent through the configured Cloudflare Worker proxy to TMDB. Do not put a TMDB secret in frontend code. The current proxy endpoint is configured in `src/lib/tmdb.ts`; forks should configure their own proxy and keep its TMDB credential on the server.
-- Clearing this site’s browser data will remove the locally saved library. Keep your original Letterboxd export as a backup.
-
 ## Built with
 
 - React and TypeScript
