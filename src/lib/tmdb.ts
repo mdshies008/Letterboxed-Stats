@@ -20,16 +20,29 @@ interface TmdbSearchResponse {
   results: TmdbSearchResult[];
 }
 
+interface TmdbPersonCredit {
+  id: number;
+  name: string;
+  profile_path: string | null;
+}
+
 interface TmdbMovieDetails {
   id: number;
   runtime: number | null;
   poster_path: string | null;
+  release_date?: string;
+  original_language?: string;
+  vote_average?: number;
+  vote_count?: number;
+  popularity?: number;
   genres: Array<{ name: string }>;
   production_countries: Array<{ name: string }>;
   credits: {
-    crew: Array<{ job: string; name: string }>;
+    crew: Array<TmdbPersonCredit & { job: string }>;
+    cast: TmdbPersonCredit[];
   };
 }
+
 async function tmdbGet<T>(url: URL): Promise<T> {
   const response = await fetch(url);
 
@@ -62,19 +75,35 @@ export async function getTmdbMovieMetadata(
   url.searchParams.set('append_to_response', 'credits');
 
   const movie = await tmdbGet<TmdbMovieDetails>(url);
+  const directorProfiles = movie.credits.crew
+    .filter((person) => person.job === 'Director')
+    .filter(
+      (person, index, crew) =>
+        crew.findIndex((candidate) => candidate.id === person.id) === index,
+    )
+    .map((person) => ({
+      id: person.id,
+      name: person.name,
+      profilePath: person.profile_path,
+    }));
 
   return {
     tmdbId: movie.id,
     countries: movie.production_countries.map((country) => country.name),
     genres: movie.genres.map((genre) => genre.name),
-    directors: [
-      ...new Set(
-        movie.credits.crew
-          .filter((person) => person.job === 'Director')
-          .map((person) => person.name),
-      ),
-    ],
+    directors: [...new Set(directorProfiles.map((person) => person.name))],
+    directorProfiles,
     runtimeMinutes: movie.runtime,
     posterPath: movie.poster_path,
+    releaseDate: movie.release_date || null,
+    originalLanguage: movie.original_language ?? null,
+    tmdbRating: movie.vote_average,
+    tmdbVoteCount: movie.vote_count,
+    tmdbPopularity: movie.popularity,
+    cast: movie.credits.cast.slice(0, 20).map((person) => ({
+      id: person.id,
+      name: person.name,
+      profilePath: person.profile_path,
+    })),
   };
 }
