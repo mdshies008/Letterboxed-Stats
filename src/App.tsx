@@ -1655,7 +1655,7 @@ const visibleCastMembers = castMembers.slice(0, castVisibleCount);
                 {period === 'all-time' ? (
                   <>
                     <article className="review-stat">
-                      <strong>{periodViewings.toLocaleString()}</strong>
+                      <strong>{periodFilms.length.toLocaleString()}</strong>
                       <span>Films</span>
                     </article>
 

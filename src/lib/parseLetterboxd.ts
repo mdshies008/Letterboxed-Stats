@@ -38,7 +38,6 @@ function makeKey(title: string, year: number | null): string {
 
 export function parseLetterboxd(rows: LetterboxdRows): Film[] {
   const films = new Map<string, Film>();
-  const watchedListDates = new Map<string, Set<string>>();
 
   function getFilm(row: Record<string, string>): Film | null {
     const title = (getColumn(row, 'Name') || getColumn(row, 'Title') || '').trim();
@@ -70,19 +69,11 @@ export function parseLetterboxd(rows: LetterboxdRows): Film[] {
     return film;
   }
 
-  // Letterboxd's watched.csv Date records when the film was marked watched.
-  // Keep it as a fallback for films that have no dated diary viewing.
+  // watched.csv confirms that a title is in the watched list.
+  // Its Date is when the title was marked watched, not a reliable viewing date.
   for (const row of rows.watched) {
     const film = getFilm(row);
-    if (!film) continue;
-
-    film.watched = true;
-    const markedWatchedDate = parseDate(getColumn(row, 'Date'));
-    if (markedWatchedDate) {
-      const dates = watchedListDates.get(film.key) ?? new Set<string>();
-      dates.add(markedWatchedDate);
-      watchedListDates.set(film.key, dates);
-    }
+    if (film) film.watched = true;
   }
 
   for (const row of rows.diary) {
@@ -92,16 +83,16 @@ export function parseLetterboxd(rows: LetterboxdRows): Film[] {
     film.watched = true;
     film.diaryEntryCount = (film.diaryEntryCount ?? 0) + 1;
 
-    // Watched Date is the date the viewing happened. Diary Date is when the
-    // diary record was added, so it must not set the viewing period.
+    // Only the diary's Watched Date identifies when the viewing happened.
+    // Diary Date is when the diary record was added.
     const watchedDate = parseDate(getColumn(row, 'Watched Date'));
     if (watchedDate) film.watchedDates.push(watchedDate);
 
     const loggedDate = parseDate(getColumn(row, 'Date'));
     if (loggedDate) film.loggedDates?.push(loggedDate);
 
-    // Ratings are loaded only from ratings.csv below. A rating added later
-    // to a diary row must not change the rating source or viewing date.
+    // Ratings are loaded from ratings.csv below. A later rating must not
+    // change the viewing date.
     if (getColumn(row, 'Rewatch')?.trim().toLowerCase() === 'yes') {
       film.rewatches += 1;
     }
@@ -114,17 +105,10 @@ export function parseLetterboxd(rows: LetterboxdRows): Film[] {
   for (const row of rows.ratings) {
     const film = getFilm(row);
     if (!film) continue;
+
     film.watched = true;
     const rating = parseRating(getColumn(row, 'Rating'));
     if (rating !== null) film.rating = rating;
-  }
-
-  // Prefer the diary's actual Watched Date when available. Only fall back to
-  // watched.csv's Date for films whose diary has no dated viewing.
-  for (const film of films.values()) {
-    if (film.watchedDates.length > 0) continue;
-    const markedWatchedDates = watchedListDates.get(film.key);
-    if (markedWatchedDates) film.watchedDates.push(...markedWatchedDates);
   }
 
   for (const row of rows.watchlist) {
